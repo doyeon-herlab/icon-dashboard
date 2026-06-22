@@ -260,9 +260,9 @@ function App() {
     if (selectedCategory !== 'all' && selectedCategory !== 'uncategorized' && m.category !== selectedCategory) return false;
     if (!term) return true;
     return (
-      icon.name.toLowerCase().includes(term) ||
-      icon.filename.toLowerCase().includes(term) ||
-      icon.purpose.toLowerCase().includes(term) ||
+      (icon.name || '').toLowerCase().includes(term) ||
+      (icon.filename || '').toLowerCase().includes(term) ||
+      (icon.purpose || '').toLowerCase().includes(term) ||
       m.tags.some(t => t.toLowerCase().includes(term))
     );
   });
