@@ -275,8 +275,6 @@ function App() {
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px' }}>
           {filteredIcons.map(icon => {
-            const m = getMeta(icon.filename);
-            const cat = categories.find(c => c.id === m.category);
             return (
               <div
                 key={icon.id}
@@ -286,10 +284,8 @@ function App() {
                 <div style={{ fontSize: '36px', color: '#495057', marginBottom: '12px', height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <i className={`mdi mdi-${icon.filename}`}></i>
                 </div>
-                <div style={{ fontWeight: '600', fontSize: '14px', marginBottom: '4px', color: '#212529' }}>{icon.name}</div>
-                <div style={{ fontFamily: 'monospace', fontSize: '11px', color: '#6c757d', backgroundColor: '#f1f3f5', padding: '2px 6px', borderRadius: '4px', display: 'inline-block', marginBottom: '8px' }}>{icon.filename}</div>
-                {cat && <div style={{ fontSize: '11px', color: '#1971c2', backgroundColor: '#e7f5ff', padding: '2px 8px', borderRadius: '10px', display: 'inline-block', marginBottom: '6px' }}>{cat.name}</div>}
-                <div style={{ fontSize: '12px', color: '#868e96', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis', minHeight: '32px' }}>{icon.purpose}</div>
+                <div style={{ fontWeight: '600', fontSize: '14px', marginBottom: '4px', color: '#212529' }}>{icon.id}. {icon.name}</div>
+                <div style={{ fontFamily: 'monospace', fontSize: '11px', color: '#868e96' }}>{icon.filename}</div>
               </div>
             );
           })}
@@ -359,18 +355,37 @@ function IconDetailPanel({ icon, meta, categories, onClose, onCategoryChange, on
         <button onClick={onClose} style={{ ...btnIcon, fontSize: '20px' }}><i className="mdi mdi-close-circle-outline" /></button>
       </div>
 
-      {/* 아이콘 모양 */}
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '90px', backgroundColor: '#f8f9fa', borderRadius: '8px', marginBottom: '16px', fontSize: '56px', color: '#343a40' }}>
-        <i className={`mdi mdi-${icon.filename}`}></i>
+      {/* 1. ID + 아이콘 */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '90px', backgroundColor: '#f8f9fa', borderRadius: '8px', marginBottom: '16px', padding: '12px', color: '#343a40' }}>
+        <div style={{ fontSize: '56px', lineHeight: 1 }}>
+          <i className={`mdi mdi-${icon.filename}`}></i>
+        </div>
+        <div style={{ fontSize: '14px', fontWeight: '600', color: '#212529', marginTop: '8px' }}>{icon.id}. {icon.name}</div>
       </div>
 
-      {/* 이름 */}
-      <Field label="아이콘 이름">
-        <div style={{ fontSize: '16px', fontWeight: '600', color: '#212529' }}>{icon.name}</div>
-        <div style={{ fontFamily: 'monospace', fontSize: '12px', color: '#6c757d', marginTop: '2px' }}>{icon.filename}</div>
+      {/* 2. 파일명 */}
+      <Field label="파일명">
+        <div style={{ fontFamily: 'monospace', fontSize: '13px', color: '#343a40', backgroundColor: '#f1f3f5', padding: '6px 10px', borderRadius: '6px' }}>{icon.filename}</div>
       </Field>
 
-      {/* 카테고리 */}
+      {/* 3. SVG 코드 */}
+      <Field label="SVG 코드">
+        {svgState === 'loading' && <div style={{ fontSize: '13px', color: '#adb5bd' }}>불러오는 중...</div>}
+        {svgState === 'error' && <div style={{ fontSize: '13px', color: '#e03131' }}>SVG를 찾을 수 없습니다 ({icon.filename}).</div>}
+        {svgState === 'ok' && (
+          <>
+            <pre style={{ fontSize: '11px', fontFamily: 'monospace', backgroundColor: '#f1f3f5', padding: '10px', borderRadius: '6px', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: '160px', overflowY: 'auto', margin: '0 0 8px 0', color: '#343a40' }}>{svg}</pre>
+            <button
+              onClick={() => onCopy(svg, 'SVG 코드')}
+              style={{ width: '100%', padding: '8px', fontSize: '13px', border: '1px solid #1971c2', backgroundColor: '#1971c2', color: '#fff', borderRadius: '6px', cursor: 'pointer' }}
+            >
+              <i className="mdi mdi-content-copy" /> SVG 복사
+            </button>
+          </>
+        )}
+      </Field>
+
+      {/* 4. 카테고리 */}
       <Field label="카테고리">
         <select
           value={meta.category || ''}
@@ -404,23 +419,6 @@ function IconDetailPanel({ icon, meta, categories, onClose, onCategoryChange, on
           />
           <button onClick={() => { onAddTag(tagInput); setTagInput(''); }} style={{ ...btnIcon, color: '#1971c2' }}><i className="mdi mdi-plus" /></button>
         </div>
-      </Field>
-
-      {/* SVG 코드 */}
-      <Field label="SVG 코드">
-        {svgState === 'loading' && <div style={{ fontSize: '13px', color: '#adb5bd' }}>불러오는 중...</div>}
-        {svgState === 'error' && <div style={{ fontSize: '13px', color: '#e03131' }}>SVG를 찾을 수 없습니다 ({icon.filename}).</div>}
-        {svgState === 'ok' && (
-          <>
-            <pre style={{ fontSize: '11px', fontFamily: 'monospace', backgroundColor: '#f1f3f5', padding: '10px', borderRadius: '6px', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: '160px', overflowY: 'auto', margin: '0 0 8px 0', color: '#343a40' }}>{svg}</pre>
-            <button
-              onClick={() => onCopy(svg, 'SVG 코드')}
-              style={{ width: '100%', padding: '8px', fontSize: '13px', border: '1px solid #1971c2', backgroundColor: '#1971c2', color: '#fff', borderRadius: '6px', cursor: 'pointer' }}
-            >
-              <i className="mdi mdi-content-copy" /> SVG 복사
-            </button>
-          </>
-        )}
       </Field>
     </aside>
   );
