@@ -241,6 +241,32 @@ function App() {
     return true;
   };
 
+  const updateIcon = async (icon, fields) => {
+    const newName = (fields.name || '').trim();
+    const newFilename = (fields.filename || '').trim().toLowerCase();
+    if (!newName || !newFilename) { showToast('이름과 파일명을 입력하세요'); return false; }
+    if (newFilename !== icon.filename && icons.some(i => i.filename === newFilename)) {
+      showToast('이미 등록된 파일명입니다'); return false;
+    }
+    const { data, error } = await supabase
+      .from('icons').update({ name: newName, filename: newFilename }).eq('id', icon.id).select().single();
+    if (error) { showToast('수정 실패: ' + error.message); return false; }
+
+    // 파일명이 바뀌면 메타(카테고리/태그) 키도 이전
+    if (newFilename !== icon.filename) {
+      const cur = meta[icon.filename];
+      if (cur) {
+        await supabase.from('icon_meta').delete().eq('filename', icon.filename);
+        await supabase.from('icon_meta').upsert({ filename: newFilename, category_id: cur.category, tags: cur.tags });
+        setMeta(prev => { const n = { ...prev }; delete n[icon.filename]; n[newFilename] = cur; return n; });
+      }
+    }
+    setIcons(prev => prev.map(i => i.id === icon.id ? data : i));
+    setSelectedIcon(data);
+    showToast('수정되었습니다');
+    return true;
+  };
+
   const deleteIcon = async (icon) => {
     if (!window.confirm(`"${icon.name}" 아이콘을 목록에서 삭제할까요?`)) return;
     setIcons(prev => prev.filter(i => i.id !== icon.id));
@@ -381,6 +407,8 @@ function App() {
           onRemoveTag={(tag) => removeTag(selectedIcon.filename, tag)}
           onCopy={handleCopy}
           onDelete={() => deleteIcon(selectedIcon)}
+          onUpdate={(fields) => updateIcon(selectedIcon, fields)}
+          existingFilenames={icons.map(i => i.filename)}
         />
       )}
 
@@ -419,12 +447,28 @@ function SnbItem({ label, active, count, onClick }) {
   );
 }
 
-function IconDetailPanel({ icon, meta, categories, onClose, onCategoryChange, onAddTag, onRemoveTag, onCopy, onDelete }) {
+function IconDetailPanel({ icon, meta, categories, onClose, onCategoryChange, onAddTag, onRemoveTag, onCopy, onDelete, onUpdate, existingFilenames }) {
   const [svg, setSvg] = useState('');
   const [svgState, setSvgState] = useState('loading'); // loading | ok | error
   const [tagInput, setTagInput] = useState('');
 
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(icon.name);
+  const [editFilename, setEditFilename] = useState(icon.filename);
+  const [saving, setSaving] = useState(false);
+
+  // 다른 아이콘을 선택하면 편집 상태 초기화
   useEffect(() => {
+    setEditing(false);
+    setEditName(icon.name);
+    setEditFilename(icon.filename);
+  }, [icon.id]);
+
+  // 편집 중에는 입력한 파일명, 아니면 현재 파일명으로 SVG/미리보기
+  const previewFilename = (editing ? editFilename.trim().toLowerCase() : icon.filename);
+
+  useEffect(() => {
+    if (editing) return; // 편집 중에는 SVG 재요청 생략
     let cancelled = false;
     setSvgState('loading');
     setSvg('');
@@ -433,27 +477,68 @@ function IconDetailPanel({ icon, meta, categories, onClose, onCategoryChange, on
       .then(text => { if (!cancelled) { setSvg(text); setSvgState('ok'); } })
       .catch(() => { if (!cancelled) setSvgState('error'); });
     return () => { cancelled = true; };
-  }, [icon.filename]);
+  }, [icon.filename, editing]);
+
+  const efn = editFilename.trim().toLowerCase();
+  const dup = efn && efn !== icon.filename && existingFilenames.includes(efn);
+  const canSave = editName.trim() && efn && !dup && !saving;
+
+  const save = async () => {
+    if (!canSave) return;
+    setSaving(true);
+    const ok = await onUpdate({ name: editName.trim(), filename: efn });
+    setSaving(false);
+    if (ok) setEditing(false);
+  };
+
+  const cancelEdit = () => {
+    setEditing(false);
+    setEditName(icon.name);
+    setEditFilename(icon.filename);
+  };
 
   return (
     <aside style={{ width: '340px', flexShrink: 0, backgroundColor: '#fff', borderLeft: '1px solid #dee2e6', padding: '20px', boxSizing: 'border-box', position: 'sticky', top: 0, alignSelf: 'flex-start', height: '100vh', overflowY: 'auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div style={{ fontSize: '13px', fontWeight: '700', color: '#868e96', textTransform: 'uppercase', letterSpacing: '0.5px' }}>아이콘 정보</div>
-        <button onClick={onClose} style={{ ...btnIcon, fontSize: '20px' }}><i className="mdi mdi-close-circle-outline" /></button>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          {!editing && <button title="수정" onClick={() => setEditing(true)} style={{ ...btnIcon, fontSize: '17px' }}><i className="mdi mdi-pencil-outline" /></button>}
+          <button onClick={onClose} style={{ ...btnIcon, fontSize: '20px' }}><i className="mdi mdi-close-circle-outline" /></button>
+        </div>
       </div>
 
       {/* 1. ID + 아이콘 */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '90px', backgroundColor: '#f8f9fa', borderRadius: '8px', marginBottom: '16px', padding: '12px', color: '#343a40' }}>
         <div style={{ fontSize: '56px', lineHeight: 1 }}>
-          <i className={`mdi mdi-${icon.filename}`}></i>
+          <i className={`mdi mdi-${previewFilename || 'help-circle-outline'}`}></i>
         </div>
-        <div style={{ fontSize: '14px', fontWeight: '600', color: '#212529', marginTop: '8px' }}>{icon.id}. {icon.name}</div>
+        {editing ? (
+          <input value={editName} onChange={(e) => setEditName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && save()}
+            style={{ ...modalInput, marginTop: '10px', textAlign: 'center' }} placeholder="아이콘명" />
+        ) : (
+          <div style={{ fontSize: '14px', fontWeight: '600', color: '#212529', marginTop: '8px' }}>{icon.id}. {icon.name}</div>
+        )}
       </div>
 
       {/* 2. 파일명 */}
       <Field label="파일명">
-        <div style={{ fontFamily: 'monospace', fontSize: '13px', color: '#343a40', backgroundColor: '#f1f3f5', padding: '6px 10px', borderRadius: '6px' }}>{icon.filename}</div>
+        {editing ? (
+          <>
+            <input value={editFilename} onChange={(e) => setEditFilename(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && save()}
+              style={{ ...modalInput, fontFamily: 'monospace' }} placeholder="예: bell-outline" />
+            <div style={{ height: '16px', fontSize: '11px', color: '#e03131', marginTop: '4px' }}>{dup ? '이미 등록된 파일명입니다.' : ''}</div>
+          </>
+        ) : (
+          <div style={{ fontFamily: 'monospace', fontSize: '13px', color: '#343a40', backgroundColor: '#f1f3f5', padding: '6px 10px', borderRadius: '6px' }}>{icon.filename}</div>
+        )}
       </Field>
+
+      {editing && (
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '18px' }}>
+          <button onClick={cancelEdit} style={{ flex: 1, padding: '9px', fontSize: '14px', border: '1px solid #ced4da', backgroundColor: '#fff', color: '#495057', borderRadius: '6px', cursor: 'pointer' }}>취소</button>
+          <button onClick={save} disabled={!canSave} style={{ flex: 1, padding: '9px', fontSize: '14px', border: 'none', backgroundColor: canSave ? '#1971c2' : '#adb5bd', color: '#fff', borderRadius: '6px', cursor: canSave ? 'pointer' : 'not-allowed' }}>{saving ? '저장 중...' : '저장'}</button>
+        </div>
+      )}
 
       {/* 3. SVG 코드 */}
       <Field label="SVG 코드">
