@@ -376,7 +376,7 @@ function App() {
 
         <div style={{ marginBottom: '16px', fontSize: '14px', color: '#495057' }}>{loading ? '불러오는 중...' : `결과: ${filteredIcons.length}개`}</div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, 200px)', justifyContent: 'flex-start', gap: '16px' }}>
           {filteredIcons.map(icon => {
             return (
               <div
