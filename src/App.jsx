@@ -568,18 +568,18 @@ function AddIconModal({ existingFilenames, categories, onClose, onAdd }) {
         <Field label="아이콘명 *">
           <input autoFocus value={name} onChange={(e) => setName(e.target.value)} style={modalInput} placeholder="예: 알림" />
         </Field>
-        <Field label="파일명 (MDI) *">
+        <Field label="파일명 *">
           <input value={filename} onChange={(e) => setFilename(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} style={modalInput} placeholder="예: bell-outline" />
           {/* 높이 고정용 메시지 영역 */}
           <div style={{ height: '16px', fontSize: '11px', color: '#e03131', marginTop: '4px' }}>{dup ? '이미 등록된 파일명입니다.' : ''}</div>
         </Field>
-        <Field label="카테고리 (선택)">
+        <Field label="카테고리">
           <select value={category} onChange={(e) => setCategory(e.target.value)} style={{ ...modalInput, backgroundColor: '#fff' }}>
             <option value="">미분류</option>
             {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </Field>
-        <Field label="태그 (선택, 쉼표로 구분)">
+        <Field label="태그">
           <input value={tagsText} onChange={(e) => setTagsText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} style={modalInput} placeholder="예: 알림, 벨, notification" />
         </Field>
 
