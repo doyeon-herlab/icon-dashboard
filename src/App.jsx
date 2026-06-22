@@ -329,29 +329,26 @@ function App() {
 
       {/* ===== 메인 ===== */}
       <main style={{ flex: 1, padding: '20px', minWidth: 0 }}>
-        <div style={{ marginBottom: '24px', paddingBottom: '16px', borderBottom: '1px solid #dee2e6', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
-          <div>
-            <h1 style={{ fontSize: '24px', margin: '0 0 8px 0', color: '#212529' }}>SIHM 플랫폼 아이콘 카탈로그</h1>
-            <p style={{ color: '#6c757d', margin: 0, fontSize: '14px' }}>총 {icons.length}개의 표준 자산</p>
+        <div style={{ marginBottom: '24px', paddingBottom: '16px', borderBottom: '1px solid #dee2e6', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+          <h1 style={{ fontSize: '24px', margin: 0, color: '#212529', flexShrink: 0 }}>SIHM 플랫폼 아이콘 카탈로그</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, justifyContent: 'flex-end', minWidth: 0 }}>
+            <input
+              type="text"
+              placeholder="아이콘명, 파일명, 태그 검색"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{ flex: 1, maxWidth: '360px', minWidth: '180px', padding: '10px 16px', fontSize: '14px', borderRadius: '6px', border: '1px solid #ced4da', outline: 'none' }}
+            />
+            <button
+              onClick={() => setShowAddIcon(true)}
+              style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '10px 16px', fontSize: '14px', fontWeight: '600', color: '#fff', backgroundColor: '#1971c2', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+            >
+              <i className="mdi mdi-plus" /> 아이콘 추가
+            </button>
           </div>
-          <button
-            onClick={() => setShowAddIcon(true)}
-            style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '10px 16px', fontSize: '14px', fontWeight: '600', color: '#fff', backgroundColor: '#1971c2', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
-          >
-            <i className="mdi mdi-plus" /> 아이콘 추가
-          </button>
         </div>
 
-        <div style={{ marginBottom: '24px', display: 'flex', gap: '12px', alignItems: 'center' }}>
-          <input
-            type="text"
-            placeholder="아이콘명, 파일명, 용도, 태그 검색..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ flex: 1, padding: '10px 16px', fontSize: '14px', borderRadius: '6px', border: '1px solid #ced4da', outline: 'none' }}
-          />
-          <div style={{ fontSize: '14px', color: '#495057', whiteSpace: 'nowrap' }}>{loading ? '불러오는 중...' : `결과: ${filteredIcons.length}개`}</div>
-        </div>
+        <div style={{ marginBottom: '16px', fontSize: '14px', color: '#495057' }}>{loading ? '불러오는 중...' : `결과: ${filteredIcons.length}개`}</div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px' }}>
           {filteredIcons.map(icon => {
