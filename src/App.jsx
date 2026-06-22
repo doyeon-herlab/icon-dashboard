@@ -491,20 +491,11 @@ function IconDetailPanel({ icon, meta, categories, onClose, onCategoryChange, on
     if (ok) setEditing(false);
   };
 
-  const cancelEdit = () => {
-    setEditing(false);
-    setEditName(icon.name);
-    setEditFilename(icon.filename);
-  };
-
   return (
     <aside style={{ width: '340px', flexShrink: 0, backgroundColor: '#fff', borderLeft: '1px solid #dee2e6', padding: '20px', boxSizing: 'border-box', position: 'sticky', top: 0, alignSelf: 'flex-start', height: '100vh', overflowY: 'auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div style={{ fontSize: '13px', fontWeight: '700', color: '#868e96', textTransform: 'uppercase', letterSpacing: '0.5px' }}>아이콘 정보</div>
-        <div style={{ display: 'flex', alignItems: 'center' }}>
-          {!editing && <button title="수정" onClick={() => setEditing(true)} style={{ ...btnIcon, fontSize: '17px' }}><i className="mdi mdi-pencil-outline" /></button>}
-          <button onClick={onClose} style={{ ...btnIcon, fontSize: '20px' }}><i className="mdi mdi-close-circle-outline" /></button>
-        </div>
+        <button onClick={onClose} style={{ ...btnIcon, fontSize: '20px' }}><i className="mdi mdi-close-circle-outline" /></button>
       </div>
 
       {/* 1. ID + 아이콘 */}
@@ -533,12 +524,13 @@ function IconDetailPanel({ icon, meta, categories, onClose, onCategoryChange, on
         )}
       </Field>
 
-      {editing && (
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '18px' }}>
-          <button onClick={cancelEdit} style={{ flex: 1, padding: '9px', fontSize: '14px', border: '1px solid #ced4da', backgroundColor: '#fff', color: '#495057', borderRadius: '6px', cursor: 'pointer' }}>취소</button>
-          <button onClick={save} disabled={!canSave} style={{ flex: 1, padding: '9px', fontSize: '14px', border: 'none', backgroundColor: canSave ? '#1971c2' : '#adb5bd', color: '#fff', borderRadius: '6px', cursor: canSave ? 'pointer' : 'not-allowed' }}>{saving ? '저장 중...' : '저장'}</button>
-        </div>
-      )}
+      <div style={{ marginBottom: '18px' }}>
+        {editing ? (
+          <button onClick={save} disabled={!canSave} style={{ padding: '6px 14px', fontSize: '13px', fontWeight: '600', border: 'none', backgroundColor: canSave ? '#1971c2' : '#adb5bd', color: '#fff', borderRadius: '6px', cursor: canSave ? 'pointer' : 'not-allowed' }}>{saving ? '저장 중...' : '저장'}</button>
+        ) : (
+          <button onClick={() => setEditing(true)} style={{ padding: '6px 14px', fontSize: '13px', fontWeight: '600', border: '1px solid #ced4da', backgroundColor: '#fff', color: '#495057', borderRadius: '6px', cursor: 'pointer' }}>수정</button>
+        )}
+      </div>
 
       {/* 3. SVG 코드 */}
       <Field label="SVG 코드">
