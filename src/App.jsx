@@ -88,10 +88,14 @@ function App() {
   const [toastMessage, setToastMessage] = useState('');
   const [loading, setLoading] = useState(true);
 
+  // 아이콘 목록 (DB) — { id, name, purpose, filename }
+  const [icons, setIcons] = useState([]);
   // 카테고리 목록 (CRUD) — { id, name }
   const [categories, setCategories] = useState([]);
   // 아이콘별 메타데이터 (카테고리/태그) — { [filename]: { category: categoryId|null, tags: string[] } }
   const [meta, setMeta] = useState({});
+
+  const [showAddIcon, setShowAddIcon] = useState(false);
 
   // 'all' | 'uncategorized' | categoryId
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -107,24 +111,37 @@ function App() {
     setTimeout(() => setToastMessage(''), 2000);
   };
 
-  // ---- 초기 로드: Supabase에서 카테고리 + 메타 가져오기 ----
+  // ---- 초기 로드: Supabase에서 아이콘 + 카테고리 + 메타 가져오기 ----
   useEffect(() => {
     (async () => {
+      let iconRes = await supabase.from('icons').select('*').order('id');
+      // icons 테이블이 비어있으면 코드에 내장된 기본 78개를 1회 시딩
+      if (!iconRes.error && (iconRes.data || []).length === 0) {
+        await supabase.from('icons').upsert(iconData, { onConflict: 'filename', ignoreDuplicates: true });
+        iconRes = await supabase.from('icons').select('*').order('id');
+      }
+
       const [catRes, metaRes] = await Promise.all([
         supabase.from('categories').select('*').order('created_at'),
         supabase.from('icon_meta').select('*'),
       ]);
-      if (catRes.error || metaRes.error) {
-        showToast('데이터를 불러오지 못했습니다');
-        setLoading(false);
-        return;
+
+      if (iconRes.error) {
+        // icons 테이블이 아직 없을 때: 내장 데이터로 폴백(추가는 불가)
+        showToast('아이콘 테이블이 없어 기본 목록을 표시합니다');
+        setIcons(iconData);
+      } else {
+        setIcons(iconRes.data || []);
       }
-      setCategories(catRes.data || []);
-      const m = {};
-      (metaRes.data || []).forEach(row => {
-        m[row.filename] = { category: row.category_id, tags: row.tags || [] };
-      });
-      setMeta(m);
+
+      if (!catRes.error) setCategories(catRes.data || []);
+      if (!metaRes.error) {
+        const m = {};
+        (metaRes.data || []).forEach(row => {
+          m[row.filename] = { category: row.category_id, tags: row.tags || [] };
+        });
+        setMeta(m);
+      }
       setLoading(false);
     })();
   }, []);
@@ -206,9 +223,34 @@ function App() {
     upsertMeta(filename, { ...cur, tags: cur.tags.filter(x => x !== tag) });
   };
 
+  // ---- 아이콘 추가/삭제 ----
+  const addIcon = async ({ name, filename, purpose }) => {
+    const nextId = icons.reduce((mx, i) => Math.max(mx, i.id), 0) + 1;
+    const row = { id: nextId, name, filename, purpose };
+    const { data, error } = await supabase.from('icons').insert(row).select().single();
+    if (error) {
+      showToast(error.code === '23505' ? '이미 등록된 파일명입니다' : '추가 실패: ' + error.message);
+      return false;
+    }
+    setIcons(prev => [...prev, data]);
+    showToast(`"${name}" 아이콘 추가됨`);
+    return true;
+  };
+
+  const deleteIcon = async (icon) => {
+    if (!window.confirm(`"${icon.name}" 아이콘을 목록에서 삭제할까요?`)) return;
+    setIcons(prev => prev.filter(i => i.id !== icon.id));
+    if (selectedIcon && selectedIcon.id === icon.id) setSelectedIcon(null);
+    const { error } = await supabase.from('icons').delete().eq('id', icon.id);
+    if (error) showToast('삭제 실패: ' + error.message);
+    // 메타도 정리
+    await supabase.from('icon_meta').delete().eq('filename', icon.filename);
+    setMeta(prev => { const n = { ...prev }; delete n[icon.filename]; return n; });
+  };
+
   // ---- 필터링 ----
   const term = searchTerm.toLowerCase();
-  const filteredIcons = iconData.filter(icon => {
+  const filteredIcons = icons.filter(icon => {
     const m = getMeta(icon.filename);
     if (selectedCategory === 'uncategorized' && m.category) return false;
     if (selectedCategory !== 'all' && selectedCategory !== 'uncategorized' && m.category !== selectedCategory) return false;
@@ -221,7 +263,7 @@ function App() {
     );
   });
 
-  const countFor = (catId) => iconData.filter(i => {
+  const countFor = (catId) => icons.filter(i => {
     const c = getMeta(i.filename).category;
     if (catId === 'all') return true;
     if (catId === 'uncategorized') return !c;
@@ -283,9 +325,17 @@ function App() {
 
       {/* ===== 메인 ===== */}
       <main style={{ flex: 1, padding: '20px', minWidth: 0 }}>
-        <div style={{ marginBottom: '24px', paddingBottom: '16px', borderBottom: '1px solid #dee2e6' }}>
-          <h1 style={{ fontSize: '24px', margin: '0 0 8px 0', color: '#212529' }}>SIHM 플랫폼 아이콘 카탈로그</h1>
-          <p style={{ color: '#6c757d', margin: 0, fontSize: '14px' }}>총 {iconData.length}개의 표준 자산</p>
+        <div style={{ marginBottom: '24px', paddingBottom: '16px', borderBottom: '1px solid #dee2e6', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+          <div>
+            <h1 style={{ fontSize: '24px', margin: '0 0 8px 0', color: '#212529' }}>SIHM 플랫폼 아이콘 카탈로그</h1>
+            <p style={{ color: '#6c757d', margin: 0, fontSize: '14px' }}>총 {icons.length}개의 표준 자산</p>
+          </div>
+          <button
+            onClick={() => setShowAddIcon(true)}
+            style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '10px 16px', fontSize: '14px', fontWeight: '600', color: '#fff', backgroundColor: '#1971c2', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+          >
+            <i className="mdi mdi-plus" /> 아이콘 추가
+          </button>
         </div>
 
         <div style={{ marginBottom: '24px', display: 'flex', gap: '12px', alignItems: 'center' }}>
@@ -329,6 +379,15 @@ function App() {
           onAddTag={(tag) => addTag(selectedIcon.filename, tag)}
           onRemoveTag={(tag) => removeTag(selectedIcon.filename, tag)}
           onCopy={handleCopy}
+          onDelete={() => deleteIcon(selectedIcon)}
+        />
+      )}
+
+      {showAddIcon && (
+        <AddIconModal
+          existingFilenames={icons.map(i => i.filename)}
+          onClose={() => setShowAddIcon(false)}
+          onAdd={addIcon}
         />
       )}
 
@@ -358,7 +417,7 @@ function SnbItem({ label, active, count, onClick }) {
   );
 }
 
-function IconDetailPanel({ icon, meta, categories, onClose, onCategoryChange, onAddTag, onRemoveTag, onCopy }) {
+function IconDetailPanel({ icon, meta, categories, onClose, onCategoryChange, onAddTag, onRemoveTag, onCopy, onDelete }) {
   const [svg, setSvg] = useState('');
   const [svgState, setSvgState] = useState('loading'); // loading | ok | error
   const [tagInput, setTagInput] = useState('');
@@ -446,9 +505,80 @@ function IconDetailPanel({ icon, meta, categories, onClose, onCategoryChange, on
           <button onClick={() => { onAddTag(tagInput); setTagInput(''); }} style={{ ...btnIcon, color: '#1971c2' }}><i className="mdi mdi-plus" /></button>
         </div>
       </Field>
+
+      <div style={{ borderTop: '1px solid #f1f3f5', paddingTop: '16px', marginTop: '4px' }}>
+        <button
+          onClick={onDelete}
+          style={{ width: '100%', padding: '8px', fontSize: '13px', border: '1px solid #ffc9c9', backgroundColor: '#fff5f5', color: '#e03131', borderRadius: '6px', cursor: 'pointer' }}
+        >
+          <i className="mdi mdi-trash-can-outline" /> 이 아이콘 삭제
+        </button>
+      </div>
     </aside>
   );
 }
+
+function AddIconModal({ existingFilenames, onClose, onAdd }) {
+  const [name, setName] = useState('');
+  const [filename, setFilename] = useState('');
+  const [purpose, setPurpose] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const fn = filename.trim().toLowerCase();
+  const dup = fn && existingFilenames.includes(fn);
+  const canSubmit = name.trim() && fn && !dup && !submitting;
+
+  const submit = async () => {
+    if (!canSubmit) return;
+    setSubmitting(true);
+    const ok = await onAdd({ name: name.trim(), filename: fn, purpose: purpose.trim() });
+    setSubmitting(false);
+    if (ok) onClose();
+  };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000 }}
+    >
+      <div onClick={(e) => e.stopPropagation()} style={{ width: '420px', maxWidth: '90vw', backgroundColor: '#fff', borderRadius: '10px', padding: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <h2 style={{ fontSize: '18px', margin: 0, color: '#212529' }}>아이콘 추가</h2>
+          <button onClick={onClose} style={{ ...btnIcon, fontSize: '20px' }}><i className="mdi mdi-close-circle-outline" /></button>
+        </div>
+
+        {/* 미리보기 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', backgroundColor: '#f8f9fa', borderRadius: '8px', padding: '14px', marginBottom: '18px' }}>
+          <div style={{ fontSize: '40px', color: '#343a40', width: '48px', textAlign: 'center' }}>
+            <i className={`mdi mdi-${fn || 'help-circle-outline'}`} />
+          </div>
+          <div style={{ fontSize: '12px', color: '#868e96' }}>
+            {fn ? '입력한 파일명의 미리보기입니다.' : 'MDI 파일명을 입력하면 미리보기가 표시됩니다.'}
+            <div style={{ marginTop: '4px' }}><a href="https://pictogrammers.com/library/mdi/" target="_blank" rel="noreferrer" style={{ color: '#1971c2' }}>MDI 아이콘 찾기 ↗</a></div>
+          </div>
+        </div>
+
+        <Field label="아이콘명 *">
+          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} style={modalInput} placeholder="예: 알림" />
+        </Field>
+        <Field label="파일명 (MDI) *">
+          <input value={filename} onChange={(e) => setFilename(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} style={modalInput} placeholder="예: bell-outline" />
+          {dup && <div style={{ fontSize: '11px', color: '#e03131', marginTop: '4px' }}>이미 등록된 파일명입니다.</div>}
+        </Field>
+        <Field label="용도/위치">
+          <input value={purpose} onChange={(e) => setPurpose(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} style={modalInput} placeholder="예: 알림 버튼" />
+        </Field>
+
+        <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+          <button onClick={onClose} style={{ flex: 1, padding: '10px', fontSize: '14px', border: '1px solid #ced4da', backgroundColor: '#fff', color: '#495057', borderRadius: '6px', cursor: 'pointer' }}>취소</button>
+          <button onClick={submit} disabled={!canSubmit} style={{ flex: 1, padding: '10px', fontSize: '14px', border: 'none', backgroundColor: canSubmit ? '#1971c2' : '#adb5bd', color: '#fff', borderRadius: '6px', cursor: canSubmit ? 'pointer' : 'not-allowed' }}>{submitting ? '추가 중...' : '추가'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const modalInput = { width: '100%', padding: '9px 12px', fontSize: '14px', border: '1px solid #ced4da', borderRadius: '6px', outline: 'none', boxSizing: 'border-box' };
 
 function Field({ label, children }) {
   return (
