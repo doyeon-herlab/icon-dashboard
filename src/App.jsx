@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from './supabase';
 
 // 78 items from '260326_아이콘 리스트.xlsx'
 const iconData = [
@@ -82,26 +83,15 @@ const iconData = [
   { "id": 78, "name": "복사", "purpose": "복사", "filename": "content-copy" }
 ];
 
-const LS_CATEGORIES = 'icon-dashboard.categories';
-const LS_META = 'icon-dashboard.meta'; // { [filename]: { category: categoryId|null, tags: string[] } }
-
-const loadLS = (key, fallback) => {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch {
-    return fallback;
-  }
-};
-
 function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [toastMessage, setToastMessage] = useState('');
+  const [loading, setLoading] = useState(true);
 
   // 카테고리 목록 (CRUD) — { id, name }
-  const [categories, setCategories] = useState(() => loadLS(LS_CATEGORIES, []));
-  // 아이콘별 메타데이터 (카테고리/태그)
-  const [meta, setMeta] = useState(() => loadLS(LS_META, {}));
+  const [categories, setCategories] = useState([]);
+  // 아이콘별 메타데이터 (카테고리/태그) — { [filename]: { category: categoryId|null, tags: string[] } }
+  const [meta, setMeta] = useState({});
 
   // 'all' | 'uncategorized' | categoryId
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -112,13 +102,32 @@ function App() {
   const [editingCategoryId, setEditingCategoryId] = useState(null);
   const [editingCategoryName, setEditingCategoryName] = useState('');
 
-  useEffect(() => { localStorage.setItem(LS_CATEGORIES, JSON.stringify(categories)); }, [categories]);
-  useEffect(() => { localStorage.setItem(LS_META, JSON.stringify(meta)); }, [meta]);
-
   const showToast = (msg) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(''), 2000);
   };
+
+  // ---- 초기 로드: Supabase에서 카테고리 + 메타 가져오기 ----
+  useEffect(() => {
+    (async () => {
+      const [catRes, metaRes] = await Promise.all([
+        supabase.from('categories').select('*').order('created_at'),
+        supabase.from('icon_meta').select('*'),
+      ]);
+      if (catRes.error || metaRes.error) {
+        showToast('데이터를 불러오지 못했습니다');
+        setLoading(false);
+        return;
+      }
+      setCategories(catRes.data || []);
+      const m = {};
+      (metaRes.data || []).forEach(row => {
+        m[row.filename] = { category: row.category_id, tags: row.tags || [] };
+      });
+      setMeta(m);
+      setLoading(false);
+    })();
+  }, []);
 
   const handleCopy = (text, label) => {
     navigator.clipboard.writeText(text).then(() => showToast(`${label} 복사 완료!`));
@@ -126,12 +135,25 @@ function App() {
 
   const getMeta = (filename) => meta[filename] || { category: null, tags: [] };
 
+  // icon_meta 한 행을 DB에 반영(upsert)하고 로컬 상태도 갱신
+  const upsertMeta = async (filename, next) => {
+    setMeta(prev => ({ ...prev, [filename]: next }));
+    const { error } = await supabase.from('icon_meta').upsert({
+      filename,
+      category_id: next.category,
+      tags: next.tags,
+    });
+    if (error) showToast('저장 실패: ' + error.message);
+  };
+
   // ---- 카테고리 CRUD ----
-  const addCategory = () => {
+  const addCategory = async () => {
     const name = newCategoryName.trim();
     if (!name) return;
-    setCategories([...categories, { id: Date.now().toString(), name }]);
     setNewCategoryName('');
+    const { data, error } = await supabase.from('categories').insert({ name }).select().single();
+    if (error) { showToast('추가 실패: ' + error.message); return; }
+    setCategories(prev => [...prev, data]);
   };
 
   const startEditCategory = (cat) => {
@@ -139,19 +161,21 @@ function App() {
     setEditingCategoryName(cat.name);
   };
 
-  const saveEditCategory = () => {
+  const saveEditCategory = async () => {
     const name = editingCategoryName.trim();
-    if (name) {
-      setCategories(categories.map(c => c.id === editingCategoryId ? { ...c, name } : c));
-    }
+    const id = editingCategoryId;
     setEditingCategoryId(null);
     setEditingCategoryName('');
+    if (!name) return;
+    setCategories(prev => prev.map(c => c.id === id ? { ...c, name } : c));
+    const { error } = await supabase.from('categories').update({ name }).eq('id', id);
+    if (error) showToast('수정 실패: ' + error.message);
   };
 
-  const deleteCategory = (id) => {
+  const deleteCategory = async (id) => {
     if (!window.confirm('이 카테고리를 삭제할까요? 이 카테고리에 속한 아이콘은 미분류로 이동합니다.')) return;
-    setCategories(categories.filter(c => c.id !== id));
-    // 해당 카테고리를 쓰던 아이콘 메타 초기화
+    setCategories(prev => prev.filter(c => c.id !== id));
+    // DB의 FK(on delete set null) 덕분에 icon_meta.category_id는 자동으로 null 처리됨 → 로컬도 동기화
     setMeta(prev => {
       const next = { ...prev };
       Object.keys(next).forEach(fn => {
@@ -160,11 +184,13 @@ function App() {
       return next;
     });
     if (selectedCategory === id) setSelectedCategory('all');
+    const { error } = await supabase.from('categories').delete().eq('id', id);
+    if (error) showToast('삭제 실패: ' + error.message);
   };
 
   // ---- 아이콘 메타 수정 ----
   const setIconCategory = (filename, categoryId) => {
-    setMeta(prev => ({ ...prev, [filename]: { ...getMeta(filename), category: categoryId || null } }));
+    upsertMeta(filename, { ...getMeta(filename), category: categoryId || null });
   };
 
   const addTag = (filename, tag) => {
@@ -172,12 +198,12 @@ function App() {
     if (!t) return;
     const cur = getMeta(filename);
     if (cur.tags.includes(t)) return;
-    setMeta(prev => ({ ...prev, [filename]: { ...cur, tags: [...cur.tags, t] } }));
+    upsertMeta(filename, { ...cur, tags: [...cur.tags, t] });
   };
 
   const removeTag = (filename, tag) => {
     const cur = getMeta(filename);
-    setMeta(prev => ({ ...prev, [filename]: { ...cur, tags: cur.tags.filter(x => x !== tag) } }));
+    upsertMeta(filename, { ...cur, tags: cur.tags.filter(x => x !== tag) });
   };
 
   // ---- 필터링 ----
@@ -270,7 +296,7 @@ function App() {
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{ flex: 1, padding: '10px 16px', fontSize: '14px', borderRadius: '6px', border: '1px solid #ced4da', outline: 'none' }}
           />
-          <div style={{ fontSize: '14px', color: '#495057', whiteSpace: 'nowrap' }}>결과: {filteredIcons.length}개</div>
+          <div style={{ fontSize: '14px', color: '#495057', whiteSpace: 'nowrap' }}>{loading ? '불러오는 중...' : `결과: ${filteredIcons.length}개`}</div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px' }}>
