@@ -224,15 +224,19 @@ function App() {
   };
 
   // ---- 아이콘 추가/삭제 ----
-  const addIcon = async ({ name, filename, purpose }) => {
+  const addIcon = async ({ name, filename, category, tags }) => {
     const nextId = icons.reduce((mx, i) => Math.max(mx, i.id), 0) + 1;
-    const row = { id: nextId, name, filename, purpose };
+    const row = { id: nextId, name, filename, purpose: null };
     const { data, error } = await supabase.from('icons').insert(row).select().single();
     if (error) {
       showToast(error.code === '23505' ? '이미 등록된 파일명입니다' : '추가 실패: ' + error.message);
       return false;
     }
     setIcons(prev => [...prev, data]);
+    // 카테고리/태그가 입력됐으면 메타도 함께 저장
+    if (category || (tags && tags.length)) {
+      await upsertMeta(filename, { category: category || null, tags: tags || [] });
+    }
     showToast(`"${name}" 아이콘 추가됨`);
     return true;
   };
@@ -386,6 +390,7 @@ function App() {
       {showAddIcon && (
         <AddIconModal
           existingFilenames={icons.map(i => i.filename)}
+          categories={categories}
           onClose={() => setShowAddIcon(false)}
           onAdd={addIcon}
         />
@@ -518,10 +523,11 @@ function IconDetailPanel({ icon, meta, categories, onClose, onCategoryChange, on
   );
 }
 
-function AddIconModal({ existingFilenames, onClose, onAdd }) {
+function AddIconModal({ existingFilenames, categories, onClose, onAdd }) {
   const [name, setName] = useState('');
   const [filename, setFilename] = useState('');
-  const [purpose, setPurpose] = useState('');
+  const [category, setCategory] = useState('');
+  const [tagsText, setTagsText] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const fn = filename.trim().toLowerCase();
@@ -531,7 +537,8 @@ function AddIconModal({ existingFilenames, onClose, onAdd }) {
   const submit = async () => {
     if (!canSubmit) return;
     setSubmitting(true);
-    const ok = await onAdd({ name: name.trim(), filename: fn, purpose: purpose.trim() });
+    const tags = tagsText.split(',').map(t => t.trim()).filter(Boolean);
+    const ok = await onAdd({ name: name.trim(), filename: fn, category: category || null, tags });
     setSubmitting(false);
     if (ok) onClose();
   };
@@ -547,14 +554,14 @@ function AddIconModal({ existingFilenames, onClose, onAdd }) {
           <button onClick={onClose} style={{ ...btnIcon, fontSize: '20px' }}><i className="mdi mdi-close-circle-outline" /></button>
         </div>
 
-        {/* 미리보기 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', backgroundColor: '#f8f9fa', borderRadius: '8px', padding: '14px', marginBottom: '18px' }}>
-          <div style={{ fontSize: '40px', color: '#343a40', width: '48px', textAlign: 'center' }}>
+        {/* 미리보기 — 고정 높이로 출렁임 방지 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', backgroundColor: '#f8f9fa', borderRadius: '8px', padding: '14px', marginBottom: '18px', height: '72px', boxSizing: 'border-box' }}>
+          <div style={{ width: '48px', height: '48px', flexShrink: 0, fontSize: '40px', lineHeight: '48px', color: '#343a40', textAlign: 'center' }}>
             <i className={`mdi mdi-${fn || 'help-circle-outline'}`} />
           </div>
-          <div style={{ fontSize: '12px', color: '#868e96' }}>
-            {fn ? '입력한 파일명의 미리보기입니다.' : 'MDI 파일명을 입력하면 미리보기가 표시됩니다.'}
-            <div style={{ marginTop: '4px' }}><a href="https://pictogrammers.com/library/mdi/" target="_blank" rel="noreferrer" style={{ color: '#1971c2' }}>MDI 아이콘 찾기 ↗</a></div>
+          <div style={{ fontSize: '12px', color: '#868e96', lineHeight: 1.5 }}>
+            MDI 파일명을 입력하면 미리보기가 표시됩니다.
+            <div><a href="https://pictogrammers.com/library/mdi/" target="_blank" rel="noreferrer" style={{ color: '#1971c2' }}>MDI 아이콘 찾기 ↗</a></div>
           </div>
         </div>
 
@@ -563,10 +570,17 @@ function AddIconModal({ existingFilenames, onClose, onAdd }) {
         </Field>
         <Field label="파일명 (MDI) *">
           <input value={filename} onChange={(e) => setFilename(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} style={modalInput} placeholder="예: bell-outline" />
-          {dup && <div style={{ fontSize: '11px', color: '#e03131', marginTop: '4px' }}>이미 등록된 파일명입니다.</div>}
+          {/* 높이 고정용 메시지 영역 */}
+          <div style={{ height: '16px', fontSize: '11px', color: '#e03131', marginTop: '4px' }}>{dup ? '이미 등록된 파일명입니다.' : ''}</div>
         </Field>
-        <Field label="용도/위치">
-          <input value={purpose} onChange={(e) => setPurpose(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} style={modalInput} placeholder="예: 알림 버튼" />
+        <Field label="카테고리 (선택)">
+          <select value={category} onChange={(e) => setCategory(e.target.value)} style={{ ...modalInput, backgroundColor: '#fff' }}>
+            <option value="">미분류</option>
+            {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </Field>
+        <Field label="태그 (선택, 쉼표로 구분)">
+          <input value={tagsText} onChange={(e) => setTagsText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} style={modalInput} placeholder="예: 알림, 벨, notification" />
         </Field>
 
         <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
