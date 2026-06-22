@@ -492,7 +492,7 @@ function IconDetailPanel({ icon, meta, categories, onClose, onCategoryChange, on
   };
 
   return (
-    <aside style={{ width: '340px', flexShrink: 0, backgroundColor: '#fff', borderLeft: '1px solid #dee2e6', padding: '20px', boxSizing: 'border-box', position: 'sticky', top: 0, alignSelf: 'flex-start', height: '100vh', overflowY: 'auto' }}>
+    <aside style={{ width: '340px', backgroundColor: '#fff', borderLeft: '1px solid #dee2e6', padding: '20px', boxSizing: 'border-box', position: 'fixed', top: 0, right: 0, height: '100vh', overflowY: 'auto', zIndex: 1500, boxShadow: '-4px 0 16px rgba(0,0,0,0.08)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div style={{ fontSize: '13px', fontWeight: '700', color: '#868e96', textTransform: 'uppercase', letterSpacing: '0.5px' }}>아이콘 정보</div>
         <button onClick={onClose} style={{ ...btnIcon, fontSize: '20px' }}><i className="mdi mdi-close-circle-outline" /></button>
