@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 // 78 items from '260326_아이콘 리스트.xlsx'
 const iconData = [
@@ -82,65 +82,355 @@ const iconData = [
   { "id": 78, "name": "복사", "purpose": "복사", "filename": "content-copy" }
 ];
 
+const LS_CATEGORIES = 'icon-dashboard.categories';
+const LS_META = 'icon-dashboard.meta'; // { [filename]: { category: categoryId|null, tags: string[] } }
+
+const loadLS = (key, fallback) => {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
 function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [toastMessage, setToastMessage] = useState('');
 
-  const handleCopy = (filename) => {
-    navigator.clipboard.writeText(filename).then(() => {
-      setToastMessage(`"${filename}" 가 복사되었습니다!`);
-      setTimeout(() => setToastMessage(''), 2000);
-    });
+  // 카테고리 목록 (CRUD) — { id, name }
+  const [categories, setCategories] = useState(() => loadLS(LS_CATEGORIES, []));
+  // 아이콘별 메타데이터 (카테고리/태그)
+  const [meta, setMeta] = useState(() => loadLS(LS_META, {}));
+
+  // 'all' | 'uncategorized' | categoryId
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  // 우측 패널에 표시할 아이콘
+  const [selectedIcon, setSelectedIcon] = useState(null);
+
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [editingCategoryId, setEditingCategoryId] = useState(null);
+  const [editingCategoryName, setEditingCategoryName] = useState('');
+
+  useEffect(() => { localStorage.setItem(LS_CATEGORIES, JSON.stringify(categories)); }, [categories]);
+  useEffect(() => { localStorage.setItem(LS_META, JSON.stringify(meta)); }, [meta]);
+
+  const showToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(''), 2000);
   };
 
-  const filteredIcons = iconData.filter(icon => 
-    icon.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    icon.filename.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    icon.purpose.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const handleCopy = (text, label) => {
+    navigator.clipboard.writeText(text).then(() => showToast(`${label} 복사 완료!`));
+  };
+
+  const getMeta = (filename) => meta[filename] || { category: null, tags: [] };
+
+  // ---- 카테고리 CRUD ----
+  const addCategory = () => {
+    const name = newCategoryName.trim();
+    if (!name) return;
+    setCategories([...categories, { id: Date.now().toString(), name }]);
+    setNewCategoryName('');
+  };
+
+  const startEditCategory = (cat) => {
+    setEditingCategoryId(cat.id);
+    setEditingCategoryName(cat.name);
+  };
+
+  const saveEditCategory = () => {
+    const name = editingCategoryName.trim();
+    if (name) {
+      setCategories(categories.map(c => c.id === editingCategoryId ? { ...c, name } : c));
+    }
+    setEditingCategoryId(null);
+    setEditingCategoryName('');
+  };
+
+  const deleteCategory = (id) => {
+    if (!window.confirm('이 카테고리를 삭제할까요? 이 카테고리에 속한 아이콘은 미분류로 이동합니다.')) return;
+    setCategories(categories.filter(c => c.id !== id));
+    // 해당 카테고리를 쓰던 아이콘 메타 초기화
+    setMeta(prev => {
+      const next = { ...prev };
+      Object.keys(next).forEach(fn => {
+        if (next[fn].category === id) next[fn] = { ...next[fn], category: null };
+      });
+      return next;
+    });
+    if (selectedCategory === id) setSelectedCategory('all');
+  };
+
+  // ---- 아이콘 메타 수정 ----
+  const setIconCategory = (filename, categoryId) => {
+    setMeta(prev => ({ ...prev, [filename]: { ...getMeta(filename), category: categoryId || null } }));
+  };
+
+  const addTag = (filename, tag) => {
+    const t = tag.trim();
+    if (!t) return;
+    const cur = getMeta(filename);
+    if (cur.tags.includes(t)) return;
+    setMeta(prev => ({ ...prev, [filename]: { ...cur, tags: [...cur.tags, t] } }));
+  };
+
+  const removeTag = (filename, tag) => {
+    const cur = getMeta(filename);
+    setMeta(prev => ({ ...prev, [filename]: { ...cur, tags: cur.tags.filter(x => x !== tag) } }));
+  };
+
+  // ---- 필터링 ----
+  const term = searchTerm.toLowerCase();
+  const filteredIcons = iconData.filter(icon => {
+    const m = getMeta(icon.filename);
+    if (selectedCategory === 'uncategorized' && m.category) return false;
+    if (selectedCategory !== 'all' && selectedCategory !== 'uncategorized' && m.category !== selectedCategory) return false;
+    if (!term) return true;
+    return (
+      icon.name.toLowerCase().includes(term) ||
+      icon.filename.toLowerCase().includes(term) ||
+      icon.purpose.toLowerCase().includes(term) ||
+      m.tags.some(t => t.toLowerCase().includes(term))
+    );
+  });
+
+  const countFor = (catId) => iconData.filter(i => {
+    const c = getMeta(i.filename).category;
+    if (catId === 'all') return true;
+    if (catId === 'uncategorized') return !c;
+    return c === catId;
+  }).length;
 
   return (
-    <div style={{ padding: '20px', fontFamily: 'sans-serif', backgroundColor: '#f8f9fa', minHeight: '100vh' }}>
+    <div style={{ display: 'flex', fontFamily: 'sans-serif', backgroundColor: '#f8f9fa', minHeight: '100vh' }}>
       <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css" />
-      
-      <div style={{ marginBottom: '24px', paddingBottom: '16px', borderBottom: '1px solid #dee2e6' }}>
-        <h1 style={{ fontSize: '24px', margin: '0 0 8px 0', color: '#212529' }}>SIHM 플랫폼 아이콘 카탈로그</h1>
-        <p style={{ color: '#6c757d', margin: 0, fontSize: '14px' }}>총 {iconData.length}개의 표준 자산</p>
-      </div>
 
-      <div style={{ marginBottom: '24px', display: 'flex', gap: '12px', alignItems: 'center' }}>
-        <input 
-          type="text" 
-          placeholder="아이콘명, 파일명, 용도 검색..." 
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          style={{ flex: 1, padding: '10px 16px', fontSize: '14px', borderRadius: '6px', border: '1px solid #ced4da', outline: 'none' }}
-        />
-        <div style={{ fontSize: '14px', color: '#495057', whiteSpace: 'nowrap' }}>결과: {filteredIcons.length}개</div>
-      </div>
+      {/* ===== 좌측 SNB ===== */}
+      <aside style={{ width: '240px', flexShrink: 0, backgroundColor: '#fff', borderRight: '1px solid #dee2e6', padding: '20px 12px', boxSizing: 'border-box', minHeight: '100vh' }}>
+        <div style={{ fontSize: '12px', fontWeight: '700', color: '#868e96', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '0 8px 8px' }}>카테고리</div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px' }}>
-        {filteredIcons.map(icon => (
-          <div 
-            key={icon.id} 
-            onClick={() => handleCopy(icon.filename)}
-            style={{ backgroundColor: '#fff', border: '1px solid #e9ecef', borderRadius: '8px', padding: '16px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s' }}
-          >
-            <div style={{ fontSize: '36px', color: '#495057', marginBottom: '12px', height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <i className={`mdi mdi-${icon.filename}`}></i>
-            </div>
-            <div style={{ fontWeight: '600', fontSize: '14px', marginBottom: '4px', color: '#212529' }}>{icon.name}</div>
-            <div style={{ fontFamily: 'monospace', fontSize: '11px', color: '#6c757d', backgroundColor: '#f1f3f5', padding: '2px 6px', borderRadius: '4px', display: 'inline-block', marginBottom: '8px' }}>{icon.filename}</div>
-            <div style={{ fontSize: '12px', color: '#868e96', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis', minHeight: '32px' }}>{icon.purpose}</div>
+        <SnbItem label="전체" active={selectedCategory === 'all'} count={countFor('all')} onClick={() => setSelectedCategory('all')} />
+        <SnbItem label="미분류" active={selectedCategory === 'uncategorized'} count={countFor('uncategorized')} onClick={() => setSelectedCategory('uncategorized')} />
+
+        <div style={{ borderTop: '1px solid #f1f3f5', margin: '8px 0' }} />
+
+        {categories.map(cat => (
+          <div key={cat.id} style={{ position: 'relative' }}>
+            {editingCategoryId === cat.id ? (
+              <div style={{ display: 'flex', gap: '4px', padding: '4px 8px' }}>
+                <input
+                  autoFocus
+                  value={editingCategoryName}
+                  onChange={(e) => setEditingCategoryName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && saveEditCategory()}
+                  style={{ flex: 1, padding: '6px 8px', fontSize: '13px', border: '1px solid #ced4da', borderRadius: '4px', outline: 'none', minWidth: 0 }}
+                />
+                <button onClick={saveEditCategory} style={btnIcon}><i className="mdi mdi-check" /></button>
+              </div>
+            ) : (
+              <div className="snb-row" style={{ display: 'flex', alignItems: 'center', borderRadius: '6px', backgroundColor: selectedCategory === cat.id ? '#e7f5ff' : 'transparent' }}>
+                <div
+                  onClick={() => setSelectedCategory(cat.id)}
+                  style={{ flex: 1, padding: '8px 8px', fontSize: '14px', cursor: 'pointer', color: selectedCategory === cat.id ? '#1971c2' : '#495057', fontWeight: selectedCategory === cat.id ? '600' : '400', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                >
+                  {cat.name} <span style={{ color: '#adb5bd', fontSize: '12px' }}>{countFor(cat.id)}</span>
+                </div>
+                <button title="수정" onClick={() => startEditCategory(cat)} style={btnIcon}><i className="mdi mdi-pencil-outline" /></button>
+                <button title="삭제" onClick={() => deleteCategory(cat.id)} style={{ ...btnIcon, color: '#e03131' }}><i className="mdi mdi-trash-can-outline" /></button>
+              </div>
+            )}
           </div>
         ))}
-      </div>
+
+        <div style={{ display: 'flex', gap: '4px', marginTop: '8px', padding: '0 4px' }}>
+          <input
+            placeholder="카테고리 추가..."
+            value={newCategoryName}
+            onChange={(e) => setNewCategoryName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && addCategory()}
+            style={{ flex: 1, padding: '7px 8px', fontSize: '13px', border: '1px solid #ced4da', borderRadius: '4px', outline: 'none', minWidth: 0 }}
+          />
+          <button onClick={addCategory} style={{ ...btnIcon, color: '#1971c2' }}><i className="mdi mdi-plus" /></button>
+        </div>
+      </aside>
+
+      {/* ===== 메인 ===== */}
+      <main style={{ flex: 1, padding: '20px', minWidth: 0 }}>
+        <div style={{ marginBottom: '24px', paddingBottom: '16px', borderBottom: '1px solid #dee2e6' }}>
+          <h1 style={{ fontSize: '24px', margin: '0 0 8px 0', color: '#212529' }}>SIHM 플랫폼 아이콘 카탈로그</h1>
+          <p style={{ color: '#6c757d', margin: 0, fontSize: '14px' }}>총 {iconData.length}개의 표준 자산</p>
+        </div>
+
+        <div style={{ marginBottom: '24px', display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <input
+            type="text"
+            placeholder="아이콘명, 파일명, 용도, 태그 검색..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{ flex: 1, padding: '10px 16px', fontSize: '14px', borderRadius: '6px', border: '1px solid #ced4da', outline: 'none' }}
+          />
+          <div style={{ fontSize: '14px', color: '#495057', whiteSpace: 'nowrap' }}>결과: {filteredIcons.length}개</div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px' }}>
+          {filteredIcons.map(icon => {
+            const m = getMeta(icon.filename);
+            const cat = categories.find(c => c.id === m.category);
+            return (
+              <div
+                key={icon.id}
+                onClick={() => setSelectedIcon(icon)}
+                style={{ backgroundColor: '#fff', border: selectedIcon && selectedIcon.id === icon.id ? '2px solid #1971c2' : '1px solid #e9ecef', borderRadius: '8px', padding: '16px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s' }}
+              >
+                <div style={{ fontSize: '36px', color: '#495057', marginBottom: '12px', height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <i className={`mdi mdi-${icon.filename}`}></i>
+                </div>
+                <div style={{ fontWeight: '600', fontSize: '14px', marginBottom: '4px', color: '#212529' }}>{icon.name}</div>
+                <div style={{ fontFamily: 'monospace', fontSize: '11px', color: '#6c757d', backgroundColor: '#f1f3f5', padding: '2px 6px', borderRadius: '4px', display: 'inline-block', marginBottom: '8px' }}>{icon.filename}</div>
+                {cat && <div style={{ fontSize: '11px', color: '#1971c2', backgroundColor: '#e7f5ff', padding: '2px 8px', borderRadius: '10px', display: 'inline-block', marginBottom: '6px' }}>{cat.name}</div>}
+                <div style={{ fontSize: '12px', color: '#868e96', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis', minHeight: '32px' }}>{icon.purpose}</div>
+              </div>
+            );
+          })}
+        </div>
+      </main>
+
+      {/* ===== 우측 상세 패널 ===== */}
+      {selectedIcon && (
+        <IconDetailPanel
+          icon={selectedIcon}
+          meta={getMeta(selectedIcon.filename)}
+          categories={categories}
+          onClose={() => setSelectedIcon(null)}
+          onCategoryChange={(catId) => setIconCategory(selectedIcon.filename, catId)}
+          onAddTag={(tag) => addTag(selectedIcon.filename, tag)}
+          onRemoveTag={(tag) => removeTag(selectedIcon.filename, tag)}
+          onCopy={handleCopy}
+        />
+      )}
 
       {toastMessage && (
-        <div style={{ position: 'fixed', bottom: '20px', right: '20px', background: '#212529', color: '#fff', padding: '10px 16px', borderRadius: '6px', fontSize: '13px', zIndex: 1000, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+        <div style={{ position: 'fixed', bottom: '20px', left: '50%', transform: 'translateX(-50%)', background: '#212529', color: '#fff', padding: '10px 16px', borderRadius: '6px', fontSize: '13px', zIndex: 2000, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
           {toastMessage}
         </div>
       )}
+    </div>
+  );
+}
+
+const btnIcon = {
+  border: 'none', background: 'transparent', cursor: 'pointer', color: '#868e96',
+  fontSize: '15px', padding: '6px 6px', display: 'flex', alignItems: 'center', borderRadius: '4px',
+};
+
+function SnbItem({ label, active, count, onClick }) {
+  return (
+    <div
+      onClick={onClick}
+      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px', color: active ? '#1971c2' : '#495057', fontWeight: active ? '600' : '400', backgroundColor: active ? '#e7f5ff' : 'transparent' }}
+    >
+      <span>{label}</span>
+      <span style={{ color: '#adb5bd', fontSize: '12px' }}>{count}</span>
+    </div>
+  );
+}
+
+function IconDetailPanel({ icon, meta, categories, onClose, onCategoryChange, onAddTag, onRemoveTag, onCopy }) {
+  const [svg, setSvg] = useState('');
+  const [svgState, setSvgState] = useState('loading'); // loading | ok | error
+  const [tagInput, setTagInput] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setSvgState('loading');
+    setSvg('');
+    fetch(`https://cdn.jsdelivr.net/npm/@mdi/svg/svg/${icon.filename}.svg`)
+      .then(r => { if (!r.ok) throw new Error('not found'); return r.text(); })
+      .then(text => { if (!cancelled) { setSvg(text); setSvgState('ok'); } })
+      .catch(() => { if (!cancelled) setSvgState('error'); });
+    return () => { cancelled = true; };
+  }, [icon.filename]);
+
+  return (
+    <aside style={{ width: '340px', flexShrink: 0, backgroundColor: '#fff', borderLeft: '1px solid #dee2e6', padding: '20px', boxSizing: 'border-box', position: 'sticky', top: 0, alignSelf: 'flex-start', height: '100vh', overflowY: 'auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <div style={{ fontSize: '13px', fontWeight: '700', color: '#868e96', textTransform: 'uppercase', letterSpacing: '0.5px' }}>아이콘 정보</div>
+        <button onClick={onClose} style={{ ...btnIcon, fontSize: '20px' }}><i className="mdi mdi-close-circle-outline" /></button>
+      </div>
+
+      {/* 아이콘 모양 */}
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '90px', backgroundColor: '#f8f9fa', borderRadius: '8px', marginBottom: '16px', fontSize: '56px', color: '#343a40' }}>
+        <i className={`mdi mdi-${icon.filename}`}></i>
+      </div>
+
+      {/* 이름 */}
+      <Field label="아이콘 이름">
+        <div style={{ fontSize: '16px', fontWeight: '600', color: '#212529' }}>{icon.name}</div>
+        <div style={{ fontFamily: 'monospace', fontSize: '12px', color: '#6c757d', marginTop: '2px' }}>{icon.filename}</div>
+      </Field>
+
+      {/* 카테고리 */}
+      <Field label="카테고리">
+        <select
+          value={meta.category || ''}
+          onChange={(e) => onCategoryChange(e.target.value)}
+          style={{ width: '100%', padding: '8px 10px', fontSize: '14px', border: '1px solid #ced4da', borderRadius: '6px', outline: 'none', backgroundColor: '#fff' }}
+        >
+          <option value="">미분류</option>
+          {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        {categories.length === 0 && <div style={{ fontSize: '11px', color: '#adb5bd', marginTop: '4px' }}>좌측에서 카테고리를 먼저 추가하세요.</div>}
+      </Field>
+
+      {/* 태그 */}
+      <Field label="태그">
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
+          {meta.tags.length === 0 && <span style={{ fontSize: '12px', color: '#adb5bd' }}>등록된 태그 없음</span>}
+          {meta.tags.map(t => (
+            <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#1971c2', backgroundColor: '#e7f5ff', padding: '3px 8px', borderRadius: '12px' }}>
+              {t}
+              <i className="mdi mdi-close" style={{ cursor: 'pointer', fontSize: '13px' }} onClick={() => onRemoveTag(t)} />
+            </span>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: '6px' }}>
+          <input
+            placeholder="태그 입력 후 Enter"
+            value={tagInput}
+            onChange={(e) => setTagInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { onAddTag(tagInput); setTagInput(''); } }}
+            style={{ flex: 1, padding: '7px 10px', fontSize: '13px', border: '1px solid #ced4da', borderRadius: '6px', outline: 'none', minWidth: 0 }}
+          />
+          <button onClick={() => { onAddTag(tagInput); setTagInput(''); }} style={{ ...btnIcon, color: '#1971c2' }}><i className="mdi mdi-plus" /></button>
+        </div>
+      </Field>
+
+      {/* SVG 코드 */}
+      <Field label="SVG 코드">
+        {svgState === 'loading' && <div style={{ fontSize: '13px', color: '#adb5bd' }}>불러오는 중...</div>}
+        {svgState === 'error' && <div style={{ fontSize: '13px', color: '#e03131' }}>SVG를 찾을 수 없습니다 ({icon.filename}).</div>}
+        {svgState === 'ok' && (
+          <>
+            <pre style={{ fontSize: '11px', fontFamily: 'monospace', backgroundColor: '#f1f3f5', padding: '10px', borderRadius: '6px', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: '160px', overflowY: 'auto', margin: '0 0 8px 0', color: '#343a40' }}>{svg}</pre>
+            <button
+              onClick={() => onCopy(svg, 'SVG 코드')}
+              style={{ width: '100%', padding: '8px', fontSize: '13px', border: '1px solid #1971c2', backgroundColor: '#1971c2', color: '#fff', borderRadius: '6px', cursor: 'pointer' }}
+            >
+              <i className="mdi mdi-content-copy" /> SVG 복사
+            </button>
+          </>
+        )}
+      </Field>
+    </aside>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <div style={{ marginBottom: '18px' }}>
+      <div style={{ fontSize: '12px', fontWeight: '600', color: '#868e96', marginBottom: '6px' }}>{label}</div>
+      {children}
     </div>
   );
 }
