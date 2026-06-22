@@ -511,7 +511,7 @@ function IconDetailPanel({ icon, meta, categories, onClose, onCategoryChange, on
           onClick={onDelete}
           style={{ width: '100%', padding: '8px', fontSize: '13px', border: '1px solid #ffc9c9', backgroundColor: '#fff5f5', color: '#e03131', borderRadius: '6px', cursor: 'pointer' }}
         >
-          <i className="mdi mdi-trash-can-outline" /> 이 아이콘 삭제
+          <i className="mdi mdi-trash-can-outline" /> 아이콘 삭제
         </button>
       </div>
     </aside>
